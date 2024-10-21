@@ -1,8 +1,8 @@
 BASE_MIRROR = "https://mirror.aarnet.edu.au/pub"
 
-db.add_mirror("ubuntu", [BASE_MIRROR+"/ubuntu/archive"])
-db.add_mirror("neurodebian", [BASE_MIRROR+"/neurodebian"])
-db.add_mirror("kali", [BASE_MIRROR+"/kali/kali"])
+db.add_mirror("ubuntu", [BASE_MIRROR + "/ubuntu/archive"])
+db.add_mirror("neurodebian", [BASE_MIRROR + "/neurodebian"])
+db.add_mirror("kali", [BASE_MIRROR + "/kali/kali"])
 
 LATEST_UBUNTU_VERSION = "noble"
 UBUNTU_VERSIONS = ["noble", "jammy", "focal"]
@@ -220,6 +220,19 @@ def parse_debian_package(ctx, collection, packages):
             raw = ent,
         )
 
+def get_sources_list_line(ctx, release_file):
+    contents = parse_debian_index("", release_file.read())
+
+    contents = contents[0]
+
+    base = db.urls_for(release_file.name.removesuffix("/Release"))
+
+    url, _, dist_name = base.rpartition("/")
+
+    url = url.removesuffix("dists")
+
+    return file("deb {} {} {}".format(url, dist_name, contents["components"]))
+
 def make_ubuntu_repos(only_latest = True, include_neurodebian = False):
     ubuntu_repos = {}
 
@@ -229,35 +242,36 @@ def make_ubuntu_repos(only_latest = True, include_neurodebian = False):
 
         repos = []
 
-        repos.append(define.build(
-            parse_debian_release,
-            define.fetch_http(
-                url = "mirror://ubuntu/dists/{}/Release".format(version),
-                expire_time = duration("8h"),
-            ),
-            "mirror://ubuntu/",
-        ))
-
-        ubuntu_repos[version] = define.package_collection(
-            parse_debian_package,
-            get_debian_installer,
-            *repos
+        release_file = define.fetch_http(
+            url = "mirror://ubuntu/dists/{}/Release".format(version),
+            expire_time = duration("8h"),
         )
 
-        if include_neurodebian and version == "focal":
-            repos.append(define.build(
-                parse_debian_release,
-                define.fetch_http(
-                    url = "mirror://neurodebian/dists/{}/Release".format(version),
-                    expire_time = duration("8h"),
-                ),
-                "mirror://neurodebian",
-            ))
+        repos.append(define.build(parse_debian_release, release_file, "mirror://ubuntu/"))
 
-            ubuntu_repos[version + "_neurodebian"] = define.package_collection(
+        ubuntu_repos[version] = (
+            define.package_collection(
                 parse_debian_package,
                 get_debian_installer,
                 *repos
+            ),
+            define.build(get_sources_list_line, release_file),
+        )
+
+        if include_neurodebian and version == "focal":
+            release_file = define.fetch_http(
+                url = "mirror://neurodebian/dists/{}/Release".format(version),
+                expire_time = duration("8h"),
+            )
+            repos.append(define.build(parse_debian_release, release_file, "mirror://neurodebian"))
+
+            ubuntu_repos[version + "_neurodebian"] = (
+                define.package_collection(
+                    parse_debian_package,
+                    get_debian_installer,
+                    *repos
+                ),
+                define.build(get_sources_list_line, release_file),
             )
 
     return ubuntu_repos
@@ -414,6 +428,7 @@ def build_debian_directives(builder, plan):
             return directives
 
         return directives + [
+            directive.add_file("/etc/apt/sources.list", builder.metadata["sources.list"]),
             directive.default_interactive("/bin/login -f root"),
             directive.run_command("/init -run-scripts /.pkg/scripts.json"),
         ]
@@ -438,6 +453,8 @@ def make_ubuntu_builders(repos):
                 query("usr-is-merged"),
             ] + defaults
 
+        packages, sources_list = repos[version]
+
         # Define a container builder for each version.
         ret.append(define.container_builder(
             name = "ubuntu@" + version,
@@ -448,9 +465,10 @@ def make_ubuntu_builders(repos):
             default_packages = defaults,
             split_default_packages = True,
             # This builder is scoped to just the packages in this repo.
-            packages = repos[version],
+            packages = packages,
             metadata = {
                 "version": version,
+                "sources.list": sources_list,
             },
         ))
 

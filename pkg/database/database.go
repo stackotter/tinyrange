@@ -1203,6 +1203,30 @@ func (db *PackageDatabase) Attr(name string) (starlark.Value, error) {
 				return starlark.None, fmt.Errorf("unknown builtin executable: %s", name)
 			}
 		}), nil
+	} else if name == "urls_for" {
+		return starlark.NewBuiltin("Database.urls_for", func(
+			thread *starlark.Thread,
+			fn *starlark.Builtin,
+			args starlark.Tuple,
+			kwargs []starlark.Tuple,
+		) (starlark.Value, error) {
+			var (
+				url string
+			)
+
+			if err := starlark.UnpackArgs(fn.Name(), args, kwargs,
+				"url", &url,
+			); err != nil {
+				return starlark.None, err
+			}
+
+			urls, err := db.UrlsFor(url)
+			if err != nil {
+				return starlark.None, err
+			}
+
+			return starlark.String(urls[0]), nil
+		}), nil
 	} else {
 		return nil, nil
 	}
