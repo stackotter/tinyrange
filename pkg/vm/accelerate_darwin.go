@@ -16,5 +16,5 @@ func (vm *VirtualMachine) Accelerate() bool {
 		return false
 	}
 
-	return string(out) == "kern.hv.supported: 1"
+	return string(out) == "kern.hv.supported: 1\n"
 }
