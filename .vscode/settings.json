@@ -8,11 +8,5 @@
         "**/.git/subtree-cache/**": true,
         "**/node_modules/*/**": true,
         "**/local/cache/**": true
-    },
-    "github.copilot.enable": {
-        "*": false,
-        "plaintext": false,
-        "markdown": false,
-        "scminput": false
     }
 }
