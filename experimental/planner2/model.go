@@ -22,6 +22,7 @@ func (t TagList) Matches(other TagList) bool {
 
 type Condition interface {
 	Satisfies(name PackageName) (MatchResult, error)
+	Key() string
 }
 
 type PackageQuery struct {
@@ -29,8 +30,11 @@ type PackageQuery struct {
 	Condition Condition
 }
 
-func NewPackageQuery(name string) PackageQuery {
-	return PackageQuery{Name: name}
+func NewPackageQuery(name string, cond Condition) PackageQuery {
+	return PackageQuery{
+		Name:      name,
+		Condition: cond,
+	}
 }
 
 type PackageOptions []PackageQuery

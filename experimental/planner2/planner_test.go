@@ -79,7 +79,7 @@ var testPkgSource = testSource{
 			{
 				tags: TagList{"hello"},
 				dependencies: []PackageOptions{
-					NewPackageOptions(NewPackageQuery("hello")),
+					NewPackageOptions(NewPackageQuery("hello", nil)),
 				},
 			},
 		},
@@ -89,7 +89,7 @@ var testPkgSource = testSource{
 func Test(t *testing.T) {
 	plan := NewPlan([]PackageSource{testPkgSource}, TagList{"hello"})
 
-	if err := plan.Add(NewPackageOptions(NewPackageQuery("hello2"))); err != nil {
+	if err := plan.Add(NewPackageOptions(NewPackageQuery("hello2", nil))); err != nil {
 		t.Fatal(err)
 	}
 }

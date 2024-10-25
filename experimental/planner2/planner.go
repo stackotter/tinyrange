@@ -2,6 +2,7 @@ package planner2
 
 import (
 	"fmt"
+	"io"
 )
 
 type installationTree struct {
@@ -9,6 +10,32 @@ type installationTree struct {
 	Installed PackageName
 	Children  []*installationTree
 }
+
+func (t *installationTree) dumpTree(w io.Writer, prefix string) {
+	fmt.Fprintf(w, "%s- %s[%s]\n", prefix, t.Query, t.Installed)
+
+	for _, child := range t.Children {
+		child.dumpTree(w, prefix+"  ")
+	}
+}
+
+type ErrNoInstallationCandidates struct {
+	Query PackageOptions
+	tree  *installationTree
+}
+
+// Error implements error.
+func (e ErrNoInstallationCandidates) Error() string {
+	return fmt.Sprintf("no installation candidates found for %s", e.Query)
+}
+
+func (e ErrNoInstallationCandidates) DumpTree(w io.Writer) {
+	e.tree.dumpTree(w, "")
+}
+
+var (
+	_ error = ErrNoInstallationCandidates{}
+)
 
 type InstallationPlan struct {
 	parent            *InstallationPlan
@@ -196,10 +223,16 @@ func (plan *InstallationPlan) add(query PackageOptions) (*installationTree, erro
 			child := plan.childPlan()
 
 			// test installation
-			tree, err := child.install(tree, installer)
-			if err == ErrFoundConflict || err == ErrIncompatibleVersion {
-				continue
-			} else if err != nil {
+			childTree, err := child.install(tree, installer)
+			if err != nil {
+				if err == ErrFoundConflict || err == ErrIncompatibleVersion {
+					continue
+				} else if noInstall, ok := err.(ErrNoInstallationCandidates); ok {
+					tree.Children = append(tree.Children, noInstall.tree)
+					noInstall.tree = tree
+
+					return nil, noInstall
+				}
 				// Other internal errors are always propagated out.
 				return nil, err
 			}
@@ -209,11 +242,14 @@ func (plan *InstallationPlan) add(query PackageOptions) (*installationTree, erro
 				return nil, err
 			}
 
-			return tree, nil
+			return childTree, nil
 		}
 	}
 
-	return nil, fmt.Errorf("no installation candidates for %s", query)
+	return nil, ErrNoInstallationCandidates{
+		Query: query,
+		tree:  tree,
+	}
 }
 
 func (plan *InstallationPlan) Add(query PackageOptions) error {
@@ -225,6 +261,10 @@ func (plan *InstallationPlan) Add(query PackageOptions) error {
 	}
 
 	return err
+}
+
+func (plan *InstallationPlan) Directives() []Directive {
+	return plan.directives
 }
 
 func NewPlan(sources []PackageSource, tags TagList) *InstallationPlan {
