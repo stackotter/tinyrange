@@ -84,6 +84,7 @@ type loginConfig struct {
 	writeDocker       string
 	experimentalFlags []string
 	hash              bool
+	writeTemplate     bool
 }
 
 func (config *loginConfig) parseInclusion(db *database.PackageDatabase, inclusion string) (common.Directive, error) {
@@ -504,7 +505,22 @@ func (config *loginConfig) run() error {
 			interaction, config.debug,
 		)
 
-		if config.Output != "" {
+		if config.writeTemplate {
+			def.SetBuildTemplateMode()
+
+			ctx := db.NewBuildContext(def)
+
+			_, err := db.Build(ctx, def, common.BuildOptions{AlwaysRebuild: true})
+			if built, ok := err.(builder.ErrTemplateBuilt); ok {
+				fmt.Printf("%s\n", string(built))
+
+				return nil
+			} else if err != nil {
+				return err
+			} else {
+				return fmt.Errorf("failed to write template output")
+			}
+		} else if config.Output != "" {
 			ctx := db.NewBuildContext(def)
 
 			defHash, err := db.HashDefinition(def)
@@ -640,5 +656,6 @@ func init() {
 	loginCmd.PersistentFlags().StringVar(&currentConfig.writeDocker, "write-docker", "", "Write the root filesystem to a docker tag on the local docker daemon.")
 	loginCmd.PersistentFlags().BoolVar(&currentConfig.hash, "hash", false, "print the hash of the definition generated after the machine has exited.")
 	loginCmd.PersistentFlags().StringArrayVar(&currentConfig.experimentalFlags, "experimental", []string{}, "Add experimental flags.")
+	loginCmd.PersistentFlags().BoolVar(&currentConfig.writeTemplate, "template", false, "If true then just generate the config and don't run the VM.")
 	rootCmd.AddCommand(loginCmd)
 }
