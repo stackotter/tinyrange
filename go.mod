@@ -11,7 +11,7 @@ require (
 	github.com/cavaliergopher/rpm v1.2.0
 	github.com/creack/pty v1.1.23
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/insomniacslk/dhcp v0.0.0-20240529192340-51bc6136a0a6
