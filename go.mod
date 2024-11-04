@@ -11,7 +11,7 @@ require (
 	github.com/cavaliergopher/rpm v1.2.0
 	github.com/creack/pty v1.1.23
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/insomniacslk/dhcp v0.0.0-20240529192340-51bc6136a0a6
@@ -22,7 +22,7 @@ require (
 	github.com/lmittmann/tint v1.0.5
 	github.com/mattn/go-isatty v0.0.20
 	github.com/miekg/dns v1.1.62
-	github.com/schollz/progressbar/v3 v3.16.1
+	github.com/schollz/progressbar/v3 v3.17.0
 	github.com/spf13/cobra v1.8.1
 	github.com/tinyrange/vm v0.0.0-20240616031946-b46d8ccc03db
 	github.com/wader/readline v0.0.0-20230307172220-bcb7158e7448

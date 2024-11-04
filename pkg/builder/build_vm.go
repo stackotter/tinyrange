@@ -43,14 +43,29 @@ func runTinyRange(exe string, configFilename string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+type ErrTemplateBuilt string
+
+// Error implements error.
+func (e ErrTemplateBuilt) Error() string { return "template built" }
+
+var (
+	_ error = ErrTemplateBuilt("")
+)
+
 type BuildVmDefinition struct {
 	params BuildVmParameters
+
+	buildTemplateOutput bool
 
 	mux       *http.ServeMux
 	server    *http.Server
 	cmd       *exec.Cmd
 	out       io.WriteCloser
 	gotOutput bool
+}
+
+func (def *BuildVmDefinition) SetBuildTemplateMode() {
+	def.buildTemplateOutput = true
 }
 
 // Dependencies implements common.BuildDefinition.
@@ -118,11 +133,10 @@ func (def *BuildVmDefinition) WriteResult(w io.Writer) error {
 	return nil
 }
 
-// Build implements common.BuildDefinition.
-func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult, error) {
+func (def *BuildVmDefinition) BuildTemplate(ctx common.BuildContext, hostAddress string) (config.TinyRangeConfig, error) {
 	arch, err := config.ArchitectureFromString(def.params.Architecture)
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 	if arch == config.ArchInvalid {
 		arch = config.HostArchitecture
@@ -132,18 +146,13 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 
 	builderCfg.OutputFilename = def.params.OutputFile
 
-	listener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		return nil, err
-	}
-
-	builderCfg.HostAddress = fmt.Sprintf("10.42.0.100:%d", listener.Addr().(*net.TCPAddr).Port)
+	builderCfg.HostAddress = hostAddress
 
 	vmCfg := config.TinyRangeConfig{}
 
 	wd, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 
 	kernelDef := def.params.Kernel
@@ -153,23 +162,23 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 		} else if arch == config.ArchARM64 {
 			kernelDef = NewFetchHttpBuildDefinition(OFFICIAL_KERNEL_URL_AARCH64, 0, nil)
 		} else {
-			return nil, fmt.Errorf("no kernel specified and no official kernel available for %s", arch)
+			return config.TinyRangeConfig{}, fmt.Errorf("no kernel specified and no official kernel available for %s", arch)
 		}
 	}
 
 	kernel, err := ctx.BuildChild(kernelDef)
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 
 	kernelFilename, err := ctx.FilenameFromDigest(kernel.Digest())
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 
 	hvScript, err := common.GetAdjacentExecutable("tinyrange_qemu.star")
 	if err != nil {
-		return nil, fmt.Errorf("could not find default hypervisor tinyrange_qemu.star: %s", hvScript)
+		return config.TinyRangeConfig{}, fmt.Errorf("could not find default hypervisor tinyrange_qemu.star: %s", hvScript)
 	}
 
 	interaction := def.params.Interaction
@@ -195,12 +204,12 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 
 		initRamFs, err := ctx.BuildChild(def.params.InitRamFs)
 		if err != nil {
-			return nil, err
+			return config.TinyRangeConfig{}, err
 		}
 
 		initRamFsFilename, err := ctx.FilenameFromDigest(initRamFs.Digest())
 		if err != nil {
-			return nil, err
+			return config.TinyRangeConfig{}, err
 		}
 
 		vmCfg.InitFilesystemFilename = initRamFsFilename
@@ -214,7 +223,7 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 
 	initJsonBytes, err := json.Marshal(&initJson)
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 
 	// Hard code the init file and script.
@@ -238,7 +247,7 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 			},
 		})
 		if err != nil {
-			return nil, err
+			return config.TinyRangeConfig{}, err
 		}
 
 		for _, frag := range frags {
@@ -254,7 +263,7 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 
 	buildConfig, err := json.Marshal(&builderCfg)
 	if err != nil {
-		return nil, err
+		return config.TinyRangeConfig{}, err
 	}
 
 	vmCfg.RootFsFragments = append(vmCfg.RootFsFragments,
@@ -263,6 +272,48 @@ func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult
 			GuestFilename: "/builder.json",
 		}},
 	)
+
+	return vmCfg, nil
+}
+
+// Build implements common.BuildDefinition.
+func (def *BuildVmDefinition) Build(ctx common.BuildContext) (common.BuildResult, error) {
+	if def.buildTemplateOutput {
+		vmCfg, err := def.BuildTemplate(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+
+		configFilename, out, err := ctx.CreateFile(".json")
+		if err != nil {
+			return nil, err
+		}
+
+		enc := json.NewEncoder(out)
+
+		if err := enc.Encode(&vmCfg); err != nil {
+			out.Close()
+			return nil, err
+		}
+
+		if err := out.Close(); err != nil {
+			return nil, err
+		}
+
+		return nil, ErrTemplateBuilt(configFilename)
+	}
+
+	listener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		return nil, err
+	}
+
+	hostAddress := fmt.Sprintf("10.42.0.100:%d", listener.Addr().(*net.TCPAddr).Port)
+
+	vmCfg, err := def.BuildTemplate(ctx, hostAddress)
+	if err != nil {
+		return nil, err
+	}
 
 	def.mux = http.NewServeMux()
 
