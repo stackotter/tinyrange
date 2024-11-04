@@ -108,6 +108,7 @@ func FormField(label string, name string, opts html.FormOptions, children ...htm
 			htm.Attr("value", fmt.Sprintf("%d", opts.Value.(int))),
 			htm.Attr("placeholder", opts.Placeholder),
 			requiredFrag,
+			htm.Group(children),
 		)
 	case html.FormFieldCheckbox:
 		var isChecked htm.Fragment
@@ -121,6 +122,7 @@ func FormField(label string, name string, opts html.FormOptions, children ...htm
 				isChecked,
 				fieldId,
 				htm.Class("form-check-input"),
+				htm.Group(children),
 			),
 			html.Label(fieldId, label, htm.Class("form-check-label")),
 		)
@@ -134,6 +136,7 @@ func FormField(label string, name string, opts html.FormOptions, children ...htm
 			htm.Text(opts.Value.(string)),
 			htm.Attr("placeholder", opts.Placeholder),
 			requiredFrag,
+			htm.Group(children),
 		)
 	case html.FormFieldSelect:
 		var options htm.Group
@@ -161,6 +164,7 @@ func FormField(label string, name string, opts html.FormOptions, children ...htm
 			htm.Class("form-select"),
 			fieldId,
 			options,
+			htm.Group(children),
 		)
 	default:
 		input = htm.NewHtmlFragment("input",
@@ -171,6 +175,7 @@ func FormField(label string, name string, opts html.FormOptions, children ...htm
 			htm.Attr("value", opts.Value.(string)),
 			htm.Attr("placeholder", opts.Placeholder),
 			requiredFrag,
+			htm.Group(children),
 		)
 	}
 
@@ -257,4 +262,26 @@ func SubmitButton(text string, color ButtonColor, children ...htm.Fragment) htm.
 	)
 	childList = append(childList, children...)
 	return htm.NewHtmlFragment("button", childList...)
+}
+
+type AlertColor string
+
+const (
+	AlertColorPrimary   AlertColor = "primary"
+	AlertColorSecondary AlertColor = "secondary"
+	AlertColorSuccess   AlertColor = "success"
+	AlertColorDanger    AlertColor = "danger"
+	AlertColorWarning   AlertColor = "warning"
+	AlertColorInfo      AlertColor = "info"
+	AlertColorLight     AlertColor = "light"
+	AlertColorDark      AlertColor = "dark"
+)
+
+func Alert(color AlertColor, children ...htm.Fragment) htm.Fragment {
+	return html.Div(
+		htm.Class("alert"),
+		htm.Class(fmt.Sprintf("alert-%s", color)),
+		htm.Attr("role", "alert"),
+		htm.Group(children),
+	)
 }

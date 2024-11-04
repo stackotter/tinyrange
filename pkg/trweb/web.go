@@ -6,11 +6,17 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
+	"time"
 
+	"github.com/agnivade/levenshtein"
+	"github.com/tinyrange/tinyrange/pkg/common"
+	"github.com/tinyrange/tinyrange/pkg/config"
 	"github.com/tinyrange/tinyrange/pkg/database"
 	"github.com/tinyrange/tinyrange/pkg/htm"
 	"github.com/tinyrange/tinyrange/pkg/htm/bootstrap"
 	"github.com/tinyrange/tinyrange/pkg/htm/html"
+	"github.com/tinyrange/tinyrange/pkg/htm/htmx"
 	"github.com/tinyrange/tinyrange/pkg/login"
 )
 
@@ -31,9 +37,13 @@ func (app *WebApplication) pageLayout(body ...htm.Fragment) htm.Fragment {
 			bootstrap.CSSSrc,
 			bootstrap.JavaScriptSrc,
 			bootstrap.ColorPickerSrc,
+			htmx.JavaScriptSrc,
 			html.Style(`iframe {
 				width: 100%;
 				height: 500px;
+			}
+			.pad {
+				padding: 0.5rem;
 			}`),
 		),
 		html.Body(
@@ -59,7 +69,27 @@ func (app *WebApplication) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 	app.serveFragment(w, r, app.pageLayout(
 		html.Form(
+			html.Id("start-form"),
 			html.FormTarget("POST", "/start"),
+			bootstrap.FormField("Builder", "builder", html.FormOptions{
+				Kind:    html.FormFieldSelect,
+				Options: []string{"alpine@3.20"},
+				Value:   "alpine@3.20",
+			}),
+			html.Div(html.Id("package_list")),
+			bootstrap.FormField("Add Package", "query",
+				html.FormOptions{
+					Kind:        html.FormFieldText,
+					Placeholder: "Search Query",
+					Value:       "",
+				},
+				htmx.Get("/package_results"),
+				htmx.Trigger(htmx.EventKeyup, htmx.ModifierChanged, htmx.ModifierDelay(250*time.Millisecond)),
+				htmx.Include(htmx.FormName("builder")),
+				htmx.Include("#package_list"),
+				htmx.Target("results"),
+			),
+			html.Div(html.Id("results")),
 			bootstrap.SubmitButton("Start", bootstrap.ButtonColorPrimary),
 		),
 	))
@@ -105,10 +135,23 @@ func (app *WebApplication) getConfig(r *http.Request) (login.Config, error) {
 		WebSSH:      fmt.Sprintf("%s,minimal", app.webSshAddress),
 	}
 
+	addPackages := r.Form["add_package"]
+
+	if len(addPackages) > 0 {
+		config.Packages = addPackages
+	}
+
 	return config, nil
 }
 
 func (app *WebApplication) handleStart(w http.ResponseWriter, r *http.Request) {
+	// parse the form.
+	if err := r.ParseForm(); err != nil {
+		slog.Error("Failed to parse form", "error", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
 	config, err := app.getConfig(r)
 	if err != nil {
 		slog.Error("Failed to get config", "error", err)
@@ -147,11 +190,140 @@ func (app *WebApplication) handleStop(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+func (app *WebApplication) handlePackageResults(w http.ResponseWriter, r *http.Request) {
+	builder := r.URL.Query().Get("builder")
+	query := r.URL.Query().Get("query")
+	existing := r.URL.Query()["add_package"]
+
+	if builder == "" {
+		http.Error(w, "Missing builder", http.StatusBadRequest)
+		return
+	}
+
+	if query == "" {
+		// return nothing
+		app.serveFragment(w, r, htm.Group{})
+		return
+	}
+
+	ctx := app.db.NewBuildContext(nil)
+
+	b, err := app.db.GetContainerBuilder(ctx, builder, config.HostArchitecture)
+	if err != nil {
+		slog.Error("Failed to get container builder", "error", err)
+		http.Error(w, "Failed to get container builder", http.StatusInternalServerError)
+		return
+	}
+
+	q, err := common.ParsePackageQuery(query)
+	if err != nil {
+		slog.Error("Failed to parse package query", "error", err)
+		http.Error(w, "Failed to parse package query", http.StatusInternalServerError)
+		return
+	}
+
+	q.MatchDirect = true
+	q.MatchPartialName = true
+
+	results, err := b.Search(q)
+	if err != nil {
+		slog.Error("Failed to search", "error", err)
+		http.Error(w, "Failed to search", http.StatusInternalServerError)
+		return
+	}
+
+	if len(results) == 0 {
+		app.serveFragment(w, r, bootstrap.Alert(bootstrap.AlertColorWarning, html.Text("No results found")))
+		return
+	}
+
+	existingMap := make(map[string]struct{})
+
+	for _, pkg := range existing {
+		existingMap[pkg] = struct{}{}
+	}
+
+	var resultStrings []string
+
+	for _, result := range results {
+		if _, ok := existingMap[result.Name.String()]; ok {
+			continue
+		}
+
+		resultStrings = append(resultStrings, result.Name.String())
+	}
+
+	// sort using levenshtein distance
+	if len(resultStrings) > 1 {
+		slices.SortFunc(resultStrings, func(a, b string) int {
+			return levenshtein.ComputeDistance(a, query) - levenshtein.ComputeDistance(b, query)
+		})
+	}
+
+	var rendered htm.Group
+	for _, result := range resultStrings {
+		if len(rendered) > 20 {
+			break
+		}
+
+		id := html.NewId()
+
+		rendered = append(rendered, bootstrap.Card(
+			html.Span(htm.Class("pad"), html.Code(html.Text(result))),
+			html.Form(
+				id,
+				html.HiddenFormField("", "query", result),
+				bootstrap.LinkButton("#", bootstrap.ButtonColorSuccess, bootstrap.ButtonSmall,
+					html.Text("Add"),
+					htmx.Get("/add_package"),
+					htmx.Include("#"+string(id), htmx.FormName("builder"), "#package_list"),
+					htmx.Target("package_list"),
+				),
+			),
+		))
+	}
+
+	app.serveFragment(w, r, htm.Group{
+		rendered,
+	})
+}
+
+func (app *WebApplication) handleAddPackage(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("query")
+	existing := r.URL.Query()["add_package"]
+
+	if query == "" {
+		http.Error(w, "Missing query", http.StatusBadRequest)
+		return
+	}
+
+	var packageList htm.Group
+
+	for _, pkg := range append(existing, query) {
+		q, err := common.ParsePackageQuery(pkg)
+		if err != nil {
+			slog.Error("Failed to parse package query", "error", err)
+			http.Error(w, "Failed to parse package query", http.StatusInternalServerError)
+			return
+		}
+
+		packageList = append(packageList, bootstrap.Card(
+			html.Span(htm.Class("pad"), html.Code(html.Text(q.Name))),
+			html.Span(htm.Class("pad"), html.Code(html.Text(q.Version))),
+			html.HiddenFormField("", "add_package", pkg),
+		))
+	}
+
+	app.serveFragment(w, r, packageList)
+}
+
 func (app *WebApplication) Run(listen string) error {
 	app.mux.HandleFunc("GET /", app.serveIndex)
 	app.mux.HandleFunc("GET /run", app.serveRun)
 	app.mux.HandleFunc("POST /start", app.handleStart)
 	app.mux.HandleFunc("POST /stop", app.handleStop)
+	app.mux.HandleFunc("GET /package_results", app.handlePackageResults)
+	app.mux.HandleFunc("GET /add_package", app.handleAddPackage)
 
 	slog.Info("Listening", "listen", "http://"+listen)
 

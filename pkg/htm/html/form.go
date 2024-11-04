@@ -31,6 +31,7 @@ const (
 	FormFieldCheckbox      FormFieldKind = "checkbox"
 	FormFieldMultilineText FormFieldKind = "textarea"
 	FormFieldSelect        FormFieldKind = "select"
+	FormFieldHidden        FormFieldKind = "hidden"
 )
 
 type FormOptions struct {
@@ -83,6 +84,13 @@ func FormField(label string, name string, opts FormOptions, children ...htm.Frag
 			fieldId,
 			htm.Text(opts.Value.(string)),
 			htm.Attr("placeholder", opts.Placeholder),
+		)
+	case FormFieldHidden:
+		input = htm.NewHtmlFragment("input",
+			htm.Attr("type", "hidden"),
+			htm.Attr("name", name),
+			fieldId,
+			htm.Attr("value", opts.Value.(string)),
 		)
 	default:
 		input = htm.NewHtmlFragment("input",
