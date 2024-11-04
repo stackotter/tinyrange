@@ -84,6 +84,7 @@ type loginConfig struct {
 	writeDocker       string
 	experimentalFlags []string
 	hash              bool
+	webSSH            string
 }
 
 func (config *loginConfig) parseInclusion(db *database.PackageDatabase, inclusion string) (common.Directive, error) {
@@ -495,6 +496,10 @@ func (config *loginConfig) run() error {
 			interaction = "init," + config.Init
 		}
 
+		if config.webSSH != "" {
+			interaction = "webssh," + config.webSSH
+		}
+
 		def := builder.NewBuildVmDefinition(
 			directives,
 			nil, nil,
@@ -640,5 +645,6 @@ func init() {
 	loginCmd.PersistentFlags().StringVar(&currentConfig.writeDocker, "write-docker", "", "Write the root filesystem to a docker tag on the local docker daemon.")
 	loginCmd.PersistentFlags().BoolVar(&currentConfig.hash, "hash", false, "print the hash of the definition generated after the machine has exited.")
 	loginCmd.PersistentFlags().StringArrayVar(&currentConfig.experimentalFlags, "experimental", []string{}, "Add experimental flags.")
+	loginCmd.PersistentFlags().StringVar(&currentConfig.webSSH, "web", "", "Start a web interface on the given port.")
 	rootCmd.AddCommand(loginCmd)
 }

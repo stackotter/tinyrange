@@ -759,6 +759,16 @@ func (tr *TinyRange) runWithConfig() error {
 		defer virtualMachine.Shutdown()
 
 		return nil
+	} else if strings.HasPrefix(interaction, "webssh") {
+		go func() {
+			if err := virtualMachine.Run(nic, tr.debug); err != nil {
+				slog.Error("failed to run virtual machine", "err", err)
+				os.Exit(1)
+			}
+		}()
+		defer virtualMachine.Shutdown()
+
+		return runWebSsh(ns, "10.42.0.2:2222", "root", "insecurepassword", strings.TrimPrefix(interaction, "webssh,"))
 	} else {
 		return fmt.Errorf("unknown interaction: %s", interaction)
 	}
