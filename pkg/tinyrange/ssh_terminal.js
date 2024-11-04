@@ -77,7 +77,7 @@ term.onResize((evt) => {
 
 let filled = false;
 
-fillScreenElement.addEventListener("click", async () => {
+function toggleFill() {
   filled = !filled;
   if (filled) {
     terminalElement.classList.add("fillScreen");
@@ -93,4 +93,8 @@ fillScreenElement.addEventListener("click", async () => {
     terminalElement.style.height = "";
   }
   fitAddon.fit();
+}
+
+fillScreenElement.addEventListener("click", async () => {
+  toggleFill();
 });
