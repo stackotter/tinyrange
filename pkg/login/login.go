@@ -29,6 +29,8 @@ import (
 func detectArchiveExtractor(base common.BuildDefinition, filename string) (common.BuildDefinition, error) {
 	if builder.ReadArchiveSupportsExtracting(filename) {
 		return builder.NewReadArchiveBuildDefinition(base, filename), nil
+	} else if strings.HasSuffix(filename, ".archive") {
+		return base, nil
 	} else {
 		return nil, fmt.Errorf("no extractor for %s", filename)
 	}
@@ -192,7 +194,11 @@ func (config *Config) getDirectives(db *database.PackageDatabase) ([]common.Dire
 		filename, target, ok := strings.Cut(filename, ",")
 
 		if !ok {
-			target = "/root"
+			if strings.HasSuffix(filename, ".archive") {
+				target = "/"
+			} else {
+				target = "/root"
+			}
 		}
 
 		if strings.HasPrefix(filename, "http://") || strings.HasPrefix(filename, "https://") {
