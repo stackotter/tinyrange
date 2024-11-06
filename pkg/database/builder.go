@@ -108,6 +108,8 @@ func (builder *ContainerBuilder) Attr(name string) (starlark.Value, error) {
 		return starlark.NewList(ret), nil
 	} else if name == "metadata" {
 		return builder.Metadata, nil
+	} else if name == "arch" {
+		return starlark.String(builder.Architecture), nil
 	} else {
 		return nil, nil
 	}

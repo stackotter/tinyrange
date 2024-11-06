@@ -780,7 +780,7 @@ func (db *PackageDatabase) GetBuilder(filename string, builder string) (starlark
 func (db *PackageDatabase) GetContainerBuilder(ctx common.BuildContext, name string, arch config.CPUArchitecture) (common.ContainerBuilder, error) {
 	builder, ok := db.ContainerBuilders[fmt.Sprintf("%s-%s", name, arch)]
 	if !ok {
-		return nil, fmt.Errorf("builder %s not found", name)
+		return nil, fmt.Errorf("builder %s not found for arch %s", name, arch)
 	}
 
 	if !builder.Loaded() {

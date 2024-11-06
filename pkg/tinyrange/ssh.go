@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -121,7 +122,9 @@ func connectOverSsh(ns *netstack.NetStack, address string, username string, pass
 		conn, err = ns.DialInternalContext(ctx, "tcp", address)
 		if err != nil {
 			if !errors.Is(err, context.DeadlineExceeded) {
-				slog.Debug("failed to connect", "err", err)
+				if !strings.Contains(err.Error(), "connection was refused") {
+					slog.Debug("failed to connect", "err", err)
+				}
 			}
 			continue
 		}
@@ -129,7 +132,9 @@ func connectOverSsh(ns *netstack.NetStack, address string, username string, pass
 		c, chans, reqs, err = ssh.NewClientConn(conn, address, config)
 		if err != nil {
 			if !errors.Is(err, context.DeadlineExceeded) {
-				slog.Debug("failed to connect", "err", err)
+				if !strings.Contains(err.Error(), "connection was refused") {
+					slog.Debug("failed to connect", "err", err)
+				}
 			}
 			continue
 		}

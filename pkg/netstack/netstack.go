@@ -252,7 +252,7 @@ func (ns *NetStack) AttachNetworkInterface() (*NetworkInterface, error) {
 		tcpip.MaskFromBytes(make([]byte, 4)),
 	)
 	if addrErr != nil {
-		return nil, err
+		return nil, addrErr
 	}
 
 	ns.nStack.AddRoute(tcpip.Route{

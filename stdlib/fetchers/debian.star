@@ -416,6 +416,7 @@ def build_debian_directives(builder, plan):
                         directive.run_command("/init -run-scripts /.pkg/scripts.json"),
                     ],
                     output = "/init/changed.archive",
+                    arch = builder.arch,
                 )),
                 define.build(
                     build_debian_install_layer,
