@@ -577,7 +577,13 @@ func (config *Config) Run(db *database.PackageDatabase) error {
 				os.Exit(1)
 			}
 
-			f, err := db.Build(ctx, def, common.BuildOptions{})
+			opts := common.BuildOptions{}
+			if len(config.Commands) == 0 {
+				// Always rebuild if this is interactive.
+				opts.AlwaysRebuild = true
+			}
+
+			f, err := db.Build(ctx, def, opts)
 			if err != nil {
 				slog.Error("fatal", "err", err)
 				os.Exit(1)
