@@ -775,6 +775,26 @@ func initMain() error {
 		return starlark.String(contents), nil
 	})
 
+	globals["file_exists"] = starlark.NewBuiltin("file_exists", func(
+		thread *starlark.Thread,
+		fn *starlark.Builtin,
+		args starlark.Tuple,
+		kwargs []starlark.Tuple,
+	) (starlark.Value, error) {
+		var (
+			path string
+		)
+
+		if err := starlark.UnpackArgs(fn.Name(), args, kwargs,
+			"path", &path,
+		); err != nil {
+			return starlark.None, err
+		}
+
+		_, err := os.Open(path)
+		return starlark.Bool(!os.IsNotExist(err)), nil
+	})
+
 	globals["file_write"] = starlark.NewBuiltin("file_write", func(
 		thread *starlark.Thread,
 		fn *starlark.Builtin,

@@ -1325,6 +1325,11 @@ def main(ctx):
             write_file_to_build(BIOS_DATA),
         ]
 
+    args += [
+        "-virtfs",
+        "local,path=.,mount_tag=shared,security_model=mapped-xattr"
+    ]
+
     return executable(
         command = command_name,
         arguments = args,

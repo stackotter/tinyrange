@@ -42,6 +42,13 @@ def main():
     set_env("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
     set_env("HOME", "/root")
 
+    # Mount directory shared by host.
+    if file_exists("/usr/bin/bindfs"):
+        # Usually you'd provide '-o trans=virtio,version=9p2000.L' when mounting from the command line, but it seems to work without that?
+        mount_point = "/root/mac"
+        mount("9p", "shared", mount_point, ensure_path = True)
+        run("/usr/bin/bindfs", "--map=501/0:@20/@0", mount_point, mount_point)
+
     if get_env("TINYRANGE_INTERACTION") == "serial":
         if "ssh_command" in args:
             exec(*args["ssh_command"])
