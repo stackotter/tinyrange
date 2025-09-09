@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,10 +118,14 @@ func runLogin(args []string) error {
 		if loginLoadConfig != "" {
 			var addedCommands []string
 			var additionalPorts []string
+			var additionalFiles []string
+			var additionalVolumes []string
 
 			// add the commands from the command line
 			addedCommands = append(addedCommands, currentConfig.Commands...)
 			additionalPorts = append(additionalPorts, currentConfig.ForwardPorts...)
+			additionalFiles = append(additionalFiles, currentConfig.Files...)
+			additionalVolumes = append(additionalVolumes, currentConfig.Volumes...)
 
 			// check if loginLoadConfig is a URL
 			if strings.HasPrefix(loginLoadConfig, "http://") || strings.HasPrefix(loginLoadConfig, "https://") {
@@ -172,24 +177,78 @@ func runLogin(args []string) error {
 				configDir = path.Native.Join(wd, configDir)
 			}
 			currentConfig.SetBasePath(configDir)
+
 			if v2, ok := loginConfigToRun.(*login2.Config); ok {
 				v2.SetBasePath(configDir)
-			}
 
-			if len(addedCommands) > 0 {
-				if len(currentConfig.Commands) > 0 {
-					// Remove the last command from the end of the config (normally a shell or a entrypoint)
-					currentConfig.Commands = currentConfig.Commands[:len(currentConfig.Commands)-1]
+				v2.Directives = append(v2.Directives, login2.LoginDirective{
+					BeginCommandLineArgs: &login2.BeginCommandLineArgsDirective{},
+				})
 
-					// Add the new commands
-					currentConfig.Commands = append(currentConfig.Commands, addedCommands...)
-				} else {
-					currentConfig.Commands = addedCommands
+				if len(addedCommands) > 0 {
+					directive := login2.RunDirective(addedCommands)
+					v2.Directives = append(v2.Directives, login2.LoginDirective{
+						Run: &directive,
+					})
 				}
-			}
 
-			if len(additionalPorts) > 0 {
-				currentConfig.ForwardPorts = append(currentConfig.ForwardPorts, additionalPorts...)
+				if len(additionalPorts) > 0 {
+					var ports []int
+					for _, port := range additionalPorts {
+						// TODO: Update expose directive to support specifying listen address so that we can support the more specific v1 forward port spec format: e.g. `10.40.0.1:1337`
+						parsedPort, err := strconv.Atoi(port)
+						if err != nil {
+							return err
+						}
+						ports = append(ports, parsedPort)
+					}
+					directive := login2.ExposeDirective(ports)
+					v2.Directives = append(v2.Directives, login2.LoginDirective{
+						Expose: &directive,
+					})
+				}
+
+				for _, file := range additionalFiles {
+					directive, err := login2.ParseV1FileToken(file, "/root")
+					if err != nil {
+						return err
+					}
+
+					v2.Directives = append(v2.Directives, login2.LoginDirective{File: &directive})
+				}
+
+				for _, volume := range additionalVolumes {
+					directive, err := login2.ParseV1VolumeToken(volume)
+					if err != nil {
+						return err
+					}
+
+					v2.Directives = append(v2.Directives, login2.LoginDirective{Volume: &directive})
+				}
+			} else {
+				if len(addedCommands) > 0 {
+					if len(currentConfig.Commands) > 0 {
+						// Remove the last command from the end of the config (normally a shell or a entrypoint)
+						currentConfig.Commands = currentConfig.Commands[:len(currentConfig.Commands)-1]
+
+						// Add the new commands
+						currentConfig.Commands = append(currentConfig.Commands, addedCommands...)
+					} else {
+						currentConfig.Commands = addedCommands
+					}
+				}
+
+				if len(additionalPorts) > 0 {
+					currentConfig.ForwardPorts = append(currentConfig.ForwardPorts, additionalPorts...)
+				}
+
+				if len(additionalFiles) > 0 {
+					currentConfig.Files = append(currentConfig.Files, additionalFiles...)
+				}
+
+				if len(additionalVolumes) > 0 {
+					currentConfig.Volumes = append(currentConfig.Volumes, additionalVolumes...)
+				}
 			}
 		} else {
 			currentConfig.SetLocalConfig()

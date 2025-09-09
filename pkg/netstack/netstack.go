@@ -512,7 +512,7 @@ func (ns *NetStack) handleTcpForward(r *tcp.ForwarderRequest) {
 
 		var outbound net.Conn
 
-		if ns.wg != nil {
+		if ns.wg != nil && loc.IP.IsPrivate() {
 			outbound, err = ns.wg.Dial("tcp", loc.String())
 		} else {
 			// Proxy connections to 10.42.0.100 to localhost.

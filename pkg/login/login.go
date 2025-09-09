@@ -366,7 +366,7 @@ func (config *Config) writeRoot(db common.PackageDatabase, directives []common.D
 
 	art, err := db.Builder().Build(def, common.BuildOptions{})
 	if err != nil {
-		db.Logger().Error("fatal", "err", err)
+		db.Logger().Error("fatal while writing root", "err", err)
 		os.Exit(1)
 	}
 
@@ -1071,7 +1071,7 @@ func (config *Config) Run(db common.PackageDatabase) error {
 
 		art, err := db.Builder().Build(def, opts)
 		if err != nil {
-			db.Logger().Error("fatal", "err", err)
+			db.Logger().Error("fatal while outputting config", "err", err)
 			os.Exit(1)
 		}
 
@@ -1102,7 +1102,7 @@ func (config *Config) Run(db common.PackageDatabase) error {
 	if _, err := db.Builder().Build(def, common.BuildOptions{
 		AlwaysRebuild: true,
 	}); err != nil {
-		db.Logger().Error("fatal", "err", err)
+		db.Logger().Error("fatal while running builder", "err", err)
 		os.Exit(1)
 	}
 

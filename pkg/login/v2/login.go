@@ -60,19 +60,33 @@ func (bq ByteQuantity) ToBytes() (int64, error) {
 }
 
 type context struct {
-	arch         cfg.CPUArchitecture
-	directives   []common.Directive
-	autoScale    bool
-	storageSizeM int
-	workdir      string
-	interaction  string
-	db           common.PackageDatabase
-	basePath     string
-	localConfig  bool
+	arch              cfg.CPUArchitecture
+	directives        []common.Directive
+	autoScale         bool
+	storageSizeM      int
+	workdir           string
+	interaction       string
+	db                common.PackageDatabase
+	basePath          string
+	localConfig       bool
+	isCommandLineArgs bool
 }
 
 type directive interface {
 	Apply(ctx *context) error
+}
+
+type BeginCommandLineArgsDirective struct{}
+
+// Apply implements directive.
+func (d *BeginCommandLineArgsDirective) Apply(ctx *context) error {
+	if d == nil {
+		return fmt.Errorf("begin command line args directive is nil")
+	}
+
+	ctx.localConfig = true
+	ctx.isCommandLineArgs = true
+	return nil
 }
 
 type PlanDirective struct {
@@ -275,11 +289,17 @@ func (f *FileDirective) Apply(ctx *context) error {
 		if !ctx.localConfig {
 			return fmt.Errorf("local file references are not allowed in remote configs: %s", f.LocalPath)
 		}
-		if path.Native.IsAbs(f.LocalPath) {
+
+		var abs string
+		if !path.Native.IsAbs(f.LocalPath) {
+			abs = path.Native.Clean(path.Native.Join(ctx.basePath, f.LocalPath))
+		} else if !ctx.isCommandLineArgs {
 			return fmt.Errorf("absolute paths are not allowed in local config: %s", f.LocalPath)
+		} else {
+			abs = f.LocalPath
 		}
-		abs := path.Native.Clean(path.Native.Join(ctx.basePath, f.LocalPath))
-		if !strings.HasPrefix(abs+string(os.PathSeparator), ctx.basePath+string(os.PathSeparator)) && abs != ctx.basePath {
+
+		if !ctx.isCommandLineArgs && !strings.HasPrefix(abs+string(os.PathSeparator), ctx.basePath+string(os.PathSeparator)) && abs != ctx.basePath {
 			return fmt.Errorf("path escapes base directory: %s", f.LocalPath)
 		}
 
@@ -291,12 +311,31 @@ func (f *FileDirective) Apply(ctx *context) error {
 			dest = path.Unix.Join(ctx.workdir, dest)
 		}
 
-		hash, err := common.Sha256HashFromFile(abs)
+		stat, err := os.Stat(abs)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to stat local file: %v", err)
 		}
-		def := builder.Factory.NewConstantHashDefinition(hash, func() (io.ReadCloser, error) { return os.Open(abs) })
-		ctx.directives = append(ctx.directives, common.DirectiveAddFile{Definition: def, Filename: dest, Executable: f.Executable})
+
+		var directive common.Directive
+		if stat.IsDir() {
+			directive = common.DirectiveLocalDirectory{
+				HostDirectory:  abs,
+				GuestDirectory: dest,
+			}
+		} else {
+			hash, err := common.Sha256HashFromFile(abs)
+			if err != nil {
+				return err
+			}
+			def := builder.Factory.NewConstantHashDefinition(hash, func() (io.ReadCloser, error) { return os.Open(abs) })
+
+			directive = common.DirectiveAddFile{
+				Definition: def,
+				Filename:   dest,
+				Executable: f.Executable,
+			}
+		}
+		ctx.directives = append(ctx.directives, directive)
 		return nil
 	} else if f.Contents != "" {
 		dest := f.Name
@@ -351,7 +390,7 @@ func (a *ArchiveDirective) Apply(ctx *context) error {
 		if !ctx.localConfig {
 			return fmt.Errorf("local archive references are not allowed in remote configs: %s", a.Src)
 		}
-		if path.Native.IsAbs(a.Src) {
+		if !ctx.isCommandLineArgs && path.Native.IsAbs(a.Src) {
 			return fmt.Errorf("absolute paths are not allowed in local config: %s", a.Src)
 		}
 		abs := path.Native.Clean(path.Native.Join(ctx.basePath, a.Src))
@@ -382,34 +421,77 @@ type AppendV1Directive struct {
 	Path string `yaml:"path"`
 }
 
-func parseV1VolumeToken(token string) (name string, sizeMB uint64, guestPath string, persist bool, err error) {
+func splitFileToken(token string) (string, string) {
+	idx := strings.Index(token, ":")
+	if idx == -1 {
+		idx = strings.Index(token, ",")
+	}
+	if idx == -1 {
+		return token, ""
+	}
+
+	localPart := token[:idx]
+	target := token[idx+1:]
+	return localPart, target
+}
+
+func ParseV1FileToken(filename string, workdir string) (FileDirective, error) {
+	if strings.HasPrefix(filename, "http://") || strings.HasPrefix(filename, "https://") {
+		url, err := url.Parse(filename)
+		if err != nil {
+			return FileDirective{}, err
+		}
+
+		pathPart, target := splitFileToken(url.Path)
+		url.Path = pathPart
+
+		if target == "" {
+			target = path.Unix.Join(workdir, path.Native.Base(url.Path))
+		}
+
+		return FileDirective{
+			URL:  url.String(),
+			Name: target,
+		}, nil
+	} else {
+		filename, target := splitFileToken(filename)
+		filePath, err := path.Native.Abs(filename)
+		if err != nil {
+			return FileDirective{}, err
+		}
+
+		if target == "" {
+			target = path.Unix.Join(workdir, path.Native.Base(filePath))
+		}
+
+		return FileDirective{
+			LocalPath: filePath,
+			Name:      target,
+		}, nil
+	}
+}
+
+func ParseV1VolumeToken(token string) (VolumeDirective, error) {
 	parts := strings.Split(token, ",")
 	if len(parts) < 3 {
-		return "", 0, "", false, fmt.Errorf("invalid volume %s", token)
+		return VolumeDirective{}, fmt.Errorf("invalid volume %s", token)
 	}
-	name = parts[0]
-	sz := strings.ToLower(parts[1])
-	mult := uint64(1)
-	if strings.HasSuffix(sz, "g") {
-		mult = 1024
-		sz = strings.TrimSuffix(sz, "g")
-	} else if strings.HasSuffix(sz, "m") {
-		mult = 1
-		sz = strings.TrimSuffix(sz, "m")
-	} else if strings.HasSuffix(sz, "t") {
-		mult = 1024 * 1024
-		sz = strings.TrimSuffix(sz, "t")
-	}
-	v, perr := strconv.ParseUint(sz, 10, 64)
-	if perr != nil {
-		return "", 0, "", false, perr
-	}
-	sizeMB = v * mult
-	guestPath = parts[2]
+
+	name := parts[0]
+	size := parts[1]
+	guestPath := parts[2]
+	persist := false
+
 	if len(parts) >= 4 {
 		persist = parts[3] == "persist"
 	}
-	return
+
+	return VolumeDirective{
+		Name:       name,
+		MountPath:  guestPath,
+		Size:       ByteQuantity(size),
+		Persistent: persist,
+	}, nil
 }
 
 // Apply implements directive.
@@ -512,11 +594,14 @@ func (a *AppendV1Directive) Apply(ctx *context) error {
 
 	// Volumes
 	for _, v := range cfg.Volumes {
-		name, sizeMB, guest, persist, err := parseV1VolumeToken(v)
+		directive, err := ParseV1VolumeToken(v)
 		if err != nil {
 			return err
 		}
-		ctx.directives = append(ctx.directives, common.DirectiveAddVolume{VolumeName: name, GuestPath: guest, MinimumSizeMB: sizeMB, Persist: persist})
+		err = directive.Apply(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Ports
@@ -660,6 +745,9 @@ type LoginDirective struct {
 	Archive     *ArchiveDirective     `yaml:"archive,omitempty"`
 	Service     *ServiceDirective     `yaml:"service,omitempty"`
 	V1Config    *AppendV1Directive    `yaml:"v1_config,omitempty"`
+
+	// This is a marker directive that cannot be set from a config file.
+	BeginCommandLineArgs *BeginCommandLineArgsDirective `yaml:"-"`
 }
 
 func (d *LoginDirective) AsDirective() (directive, error) {
@@ -687,6 +775,8 @@ func (d *LoginDirective) AsDirective() (directive, error) {
 		return *d.Service, nil
 	} else if d.V1Config != nil {
 		return d.V1Config, nil
+	} else if d.BeginCommandLineArgs != nil {
+		return d.BeginCommandLineArgs, nil
 	} else {
 		return nil, fmt.Errorf("empty directive")
 	}

@@ -50,7 +50,13 @@ def main():
 
     # Run additional scripts.
     if "additional_scripts" in args:
-        for script in args["additional_scripts"]:
+        scripts = args["additional_scripts"]
+        # Run mounting script first
+        if "/init.d/mount.star" in scripts:
+            run_starlark("/init.d/mount.star")
+        for script in scripts:
+            if script == "/init.d/mount.star":
+                continue # Already processed
             run_starlark(script)
 
     # If the nbd_test flag is set then mount a test filesystem at /mnt.

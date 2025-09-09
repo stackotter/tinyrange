@@ -2053,16 +2053,27 @@ func (d *driver) exec(create func(vmm Driver) (VirtualMachineMonitor, error)) er
 
 			mountNames := []string{"vdb", "vdc", "vdd", "vde", "vdf", "vdg"}
 
-			mountScript := "def main():\n"
+			mountScript := `def main():
+  if path_exists("/sbin/fsck.ext4"):
+`
+			for i, _ := range volumes {
+				mountScript += fmt.Sprintf(
+					"    run_fallible(\"/sbin/fsck.ext4\", \"-y\", \"/dev/%s\")\n",
+					mountNames[i],
+				)
+			}
+
 			for i, volume := range volumes {
 				mountScript += fmt.Sprintf(
-					"  mount(\"ext4\", \"/dev/%s\", \"%s\", ensure_path = True)\n",
-					mountNames[i], volume.GuestPath,
+					"  print(\"mounting %s\")\n  mount(\"ext4\", \"/dev/%s\", \"%s\", ensure_path = True)\n",
+					mountNames[i], mountNames[i], volume.GuestPath,
 				)
 				if feature.HasFeature(feature.FeatureExt4Resize) {
 					mountScript += fmt.Sprintf("  linux_ext4_try_resize(\"%s\")\n", volume.GuestPath)
 				}
 			}
+
+			mountScript += "  print(\"finished mount.star\")"
 
 			if err := rootFilesystem.WriteFile("/init.d/mount.star", []byte(mountScript)); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
@@ -2577,7 +2588,7 @@ func initCommon(
 	if *doPrepare {
 		out, err := prepare(driver)
 		if err != nil {
-			driver.log.Error("fatal", "err", err)
+			driver.log.Error("fatal while preparing driver (in initCommon)", "err", err)
 			os.Exit(1)
 		}
 

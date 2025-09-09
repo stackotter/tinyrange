@@ -33,7 +33,7 @@ func init() {
 	features[FeatureTokenLockerDebug] = false
 	features[FeatureFastWritePersist] = true
 	features[FeatureExt4Resize] = false
-	features[FeatureNewDiskFormat] = true
+	features[FeatureNewDiskFormat] = false
 	features[FeatureNoAccelerate] = false
 	features[FeatureOCIArchive2] = false
 }

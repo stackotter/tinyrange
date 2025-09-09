@@ -786,6 +786,34 @@ func getStarlarkGlobals(log log.Handler) (starlark.StringDict, error) {
 		return starlark.None, nil
 	})
 
+	globals["run_fallible"] = starlark.NewBuiltin("run_fallible", func(
+		thread *starlark.Thread,
+		fn *starlark.Builtin,
+		args starlark.Tuple,
+		kwargs []starlark.Tuple,
+	) (starlark.Value, error) {
+		var cmdArgs []string
+
+		for _, arg := range args {
+			str, ok := starlark.AsString(arg)
+			if !ok {
+				return starlark.None, fmt.Errorf("expected string got %s", arg.Type())
+			}
+
+			cmdArgs = append(cmdArgs, str)
+		}
+
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+
+		_ = cmd.Run()
+
+		return starlark.None, nil
+	})
+
 	globals["set_hostname"] = starlark.NewBuiltin("set_hostname", func(
 		thread *starlark.Thread,
 		fn *starlark.Builtin,
@@ -851,6 +879,24 @@ func getStarlarkGlobals(log log.Handler) (starlark.StringDict, error) {
 		}
 
 		return starlark.None, nil
+	})
+
+	globals["path_exists"] = starlark.NewBuiltin("path_exists", func(
+		thread *starlark.Thread,
+		fn *starlark.Builtin,
+		args starlark.Tuple,
+		kwargs []starlark.Tuple,
+	) (starlark.Value, error) {
+		var path string
+
+		if err := starlark.UnpackArgs(fn.Name(), args, kwargs,
+			"path", &path,
+		); err != nil {
+			return starlark.None, err
+		}
+
+		_, err := os.Stat(path)
+		return starlark.Bool(!os.IsNotExist(err)), nil
 	})
 
 	globals["path_ensure"] = starlark.NewBuiltin("path_ensure", func(
@@ -1913,7 +1959,7 @@ func InitMain() {
 	log.Default().Debug("TinyRange Init", "version", version, "pid", os.Getpid())
 
 	if err := initMain(); err != nil {
-		log.Default().Error("fatal", "err", err)
+		log.Default().Error("fatal while running InitMain", "err", err)
 		os.Exit(1)
 	}
 }
