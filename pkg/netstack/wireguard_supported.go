@@ -11,10 +11,14 @@ import (
 	"github.com/tinyrange/tinyrange/pkg/common"
 )
 
-func (ns *NetStack) SetupWireguard(config string, mtu int) error {
+func (ns *NetStack) SetupWireguard(config string, mtu int, guestIp string) error {
 	handler := wireguard.NewSimpleFlowHandler()
 
-	wg, err := wireguard.NewFromConfig("10.40.0.2", mtu, config, handler)
+	if guestIp == "" {
+		guestIp = "10.40.0.2"
+	}
+
+	wg, err := wireguard.NewFromConfig(guestIp, mtu, config, handler)
 	if err != nil {
 		return err
 	}

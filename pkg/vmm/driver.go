@@ -385,6 +385,7 @@ type driver struct {
 	dumpFsPath                 string
 	nbdBlockSize               int
 	wireguardUrl               string
+	wireguardGuestIp           string
 	packetCapturePath          string
 	cpuCores                   int
 	memoryMB                   int
@@ -2097,7 +2098,7 @@ func (d *driver) exec(create func(vmm Driver) (VirtualMachineMonitor, error)) er
 			return fmt.Errorf("failed to read wireguard config: %w", err)
 		}
 
-		if err := ns.SetupWireguard(string(config), 1420); err != nil {
+		if err := ns.SetupWireguard(string(config), 1420, d.wireguardGuestIp); err != nil {
 			return fmt.Errorf("failed to setup wireguard: %w", err)
 		}
 	}
@@ -2467,6 +2468,7 @@ var (
 	exportFsPath               = DriverFlags.String("exportfs", "", "Export the filesystem to a file.")
 	dumpFsPath                 = DriverFlags.String("dumpfs", "", "Dump the filename and offset of any reads from the filesystem to a CSV file.")
 	wireguardUrl               = DriverFlags.String("wireguard-url", "", "URL to fetch wireguard config from.")
+	wireguardGuestIp           = DriverFlags.String("wireguard-guest-ip", "", "Guest ip to use when creating wireguard connection (in conjunction with -wireguard-url).")
 	nbdBlockSize               = DriverFlags.Int("nbd-block-size", 0, "Override the preferred and maximum block size for the NBD server. This can have major performance implications.")
 	packetCapturePath          = DriverFlags.String("packet-capture", "", "Path to write packet capture in pcap format to.")
 	driverUrl                  = DriverFlags.String("url", "", "The URL of the driver to create.")
@@ -2506,6 +2508,7 @@ func initCommon(
 		exportFsPath:               *exportFsPath,
 		dumpFsPath:                 *dumpFsPath,
 		wireguardUrl:               *wireguardUrl,
+		wireguardGuestIp:           *wireguardGuestIp,
 		nbdBlockSize:               *nbdBlockSize,
 		packetCapturePath:          *packetCapturePath,
 		socks5Proxy:                *socks5Proxy,

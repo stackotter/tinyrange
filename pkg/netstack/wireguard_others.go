@@ -7,6 +7,6 @@ import (
 	"runtime"
 )
 
-func (ns *NetStack) SetupWireguard(config string, mtu int) error {
+func (ns *NetStack) SetupWireguard(config string, mtu int, guestIp string) error {
 	return fmt.Errorf("wireguard is not supported on this platform %s", runtime.GOOS)
 }
