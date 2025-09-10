@@ -5,6 +5,8 @@ package netstack
 import (
 	"context"
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/tinyrange/wireguard"
 
@@ -33,35 +35,55 @@ func (ns *NetStack) SetupWireguard(config string, mtu int, guestIp string) error
 		}
 	}()
 
-	listen, err := handler.ListenTCPAddr(fmt.Sprintf("%d.%d.%d.%d:0", ns.guestIPv4[0], ns.guestIPv4[1], ns.guestIPv4[2], ns.guestIPv4[3]))
+	selfIp := fmt.Sprintf("%d.%d.%d.%d", ns.guestIPv4[0], ns.guestIPv4[1], ns.guestIPv4[2], ns.guestIPv4[3])
+	listen1, err := handler.ListenTCPAddr(fmt.Sprintf("%s:0", selfIp))
 	if err != nil {
 		return err
 	}
 
-	go func() {
-		for {
-			conn, err := listen.Accept()
-			if err != nil {
-				ns.log.Error("failed to accept connection", "err", err)
-				return
-			}
+	listen2, err := handler.ListenTCPAddr(fmt.Sprintf("%s:0", guestIp))
+	if err != nil {
+		return err
+	}
 
-			go func() {
-				defer conn.Close()
+	var listeners []net.Listener
+	listeners = append(listeners, listen1, listen2)
 
-				backend, err := ns.DialInternalContext(context.Background(), "tcp", conn.LocalAddr().String())
+	for _, listen := range listeners {
+		go func() {
+			for {
+				conn, err := listen.Accept()
 				if err != nil {
-					ns.log.Error("failed to dial backend", "err", err)
+					ns.log.Error("failed to accept connection", "err", err)
 					return
 				}
-				defer backend.Close()
 
-				if err := common.Proxy(backend, conn, 1400); err != nil {
-					ns.log.Error("proxy error", "err", err)
-				}
-			}()
-		}
-	}()
+				ns.log.Debug("accepted connection", "conn", conn.LocalAddr().String())
+
+				go func() {
+					defer conn.Close()
+
+					parts := strings.Split(conn.LocalAddr().String(), ":")
+					port := parts[len(parts)-1]
+
+					backendAddr := fmt.Sprintf("%s:%s", selfIp, port)
+					ns.log.Debug("connecting", "backendAddr", backendAddr)
+					backend, err := ns.DialInternalContext(context.Background(), "tcp", backendAddr)
+					if err != nil {
+						ns.log.Error("failed to dial backend", "err", err)
+						return
+					}
+					defer backend.Close()
+
+					ns.log.Debug("proxying", "backendAddr", backendAddr)
+					if err := common.Proxy(backend, conn, 1400); err != nil {
+						ns.log.Error("proxy error", "err", err)
+					}
+					ns.log.Debug("done proxying")
+				}()
+			}
+		}()
+	}
 
 	return nil
 }
